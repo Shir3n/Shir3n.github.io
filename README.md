@@ -508,7 +508,7 @@
                         </div>
                         <div class="form-group">
                             <label for="editCardColor">Color *</label>
-                            <select id="editCardColor" required>
+                            <select id="editCardColor" multiple required>
                                 <option value="">Selecciona...</option>
                                 <option value="Rojo">Rojo</option>
                                 <option value="Azul">Azul</option>
@@ -585,7 +585,7 @@
                         </div>
                         <div class="form-group">
                             <label for="cardColor">Color *</label>
-                            <select id="cardColor" required>
+                            <select id="cardColor" multiple required>
                                 <option value="">Selecciona...</option>
                                 <option value="Rojo">Rojo</option>
                                 <option value="Azul">Azul</option>
@@ -898,7 +898,7 @@
                 id: Date.now(),
                 name: document.getElementById('cardName').value,
                 number: document.getElementById('cardNumber').value,
-                color: document.getElementById('cardColor').value,
+                color: Array.from(document.getElementById('cardColor').selectedOptions).map(opt => opt.value),
                 type: document.getElementById('cardType').value,
                 trait: document.getElementById('cardTrait').value,
                 rarity: document.getElementById('cardRarity').value,
@@ -970,7 +970,7 @@
                     id: id,
                     name: document.getElementById('editCardName').value,
                     number: document.getElementById('editCardNumber').value,
-                    color: document.getElementById('editCardColor').value,
+                    color: Array.from(document.getElementById('cardColor').selectedOptions).map(opt => opt.value),
                     type: document.getElementById('editCardType').value,
                     trait: document.getElementById('editCardTrait').value,
                     rarity: document.getElementById('editCardRarity').value,
@@ -1087,7 +1087,9 @@
             
             // Filtrar cartas
             let filtered = cards.filter(card => {
-                const matchesColor = currentColorFilter === 'all' || card.color === currentColorFilter;
+                const matchesColor = currentColorFilter === 'all' ||
+    (Array.isArray(card.color) && card.color.includes(currentColorFilter)) ||
+    card.color === currentColorFilter;
                 const matchesTrait = currentTraitFilter === 'all' || (card.trait && card.trait.split(',').some(t => t.trim() === currentTraitFilter));
                 const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                      card.number.toLowerCase().includes(searchTerm.toLowerCase());
@@ -1130,7 +1132,11 @@
                         </div>
 
                         <div>
-                            <div class="card-color" style="${getColorStyle(card.color)}">${card.color}</div>
+                            ${Array.isArray(card.color) 
+    ? card.color.map(c => `<div class="card-color" style="${getColorStyle(c)}">${c}</div>`).join('')
+    : `<div class="card-color" style="${getColorStyle(card.color)}">${card.color}</div>`
+}
+
                             <div class="card-rarity" style="background: #FF9800; color: white;">${card.rarity}</div>
                         </div>
 
