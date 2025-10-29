@@ -489,7 +489,6 @@
             <div id="cardsContainer" class="cards-grid"></div>
         </div>
 
-        <!-- Modal para editar -->
         <div id="editModal" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
@@ -662,13 +661,17 @@
                 </div>
 
                 <div style="padding-top: 30px; border-top: 2px solid #e0e0e0;">
-                    <h3 style="margin-bottom: 10px;">📱 Generar código QR</h3>
-                    <p style="color: #666; margin-bottom: 15px;">Genera un código QR que otros pueden escanear para ver tu colección (requiere que subas este HTML a internet).</p>
-                    <div class="form-group">
-                        <label for="urlInput">URL de tu colección online:</label>
-                        <input type="url" id="urlInput" placeholder="https://tu-sitio.com/mi-coleccion.html">
+                    <h3 style="margin-bottom: 10px;">🔗 Enlace Compartible Dinámico</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Genera un enlace con la información codificada de tu colección actual. Al abrirlo, otra persona verá exactamente tu inventario.</p>
+                    <div class="form-group" style="flex-direction: row; gap: 10px;">
+                        <input type="text" id="shareLinkInput" readonly style="flex-grow: 1; cursor: pointer;" placeholder="Haz clic en Generar Enlace">
+                        <button onclick="generateShareLink()">Generar Enlace</button>
                     </div>
-                    <button onclick="generateQR()" style="margin-bottom: 20px;">🔲 Generar QR</button>
+
+                    <h3 style="margin-top: 30px; margin-bottom: 10px;">📱 Código QR (Basado en el Enlace Compartible)</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Genera un código QR de tu enlace compartible para escanearlo fácilmente.</p>
+                    
+                    <button onclick="generateQRFromShareLink()" style="margin-bottom: 20px;">🔲 Generar QR</button>
                     
                     <div id="qrContainer" style="display: none; text-align: center; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.1);">
                         <canvas id="qrCanvas"></canvas>
@@ -686,21 +689,141 @@
         let currentColorFilter = 'all';
         let currentTraitFilter = 'all';
         let searchTerm = '';
+        
+        // --- LÓGICA DE CARGA Y PERSISTENCIA ---
 
-        // Cargar cartas desde memoria
-        function loadCards() {
+        // Función de Guardado (a LocalStorage)
+        function saveCards() {
+            localStorage.setItem('digimonCards', JSON.stringify(cards));
+            // Actualiza el enlace compartido cada vez que se guardan cambios (opcional)
+            // generateShareLink(); 
+        }
+
+        // 1. Cargar desde la URL (Máxima Prioridad)
+        function loadFromURL() {
+            const hash = window.location.hash.substring(1); 
+            if (hash) {
+                try {
+                    const datosDecodificados = decodeURIComponent(hash);
+                    return JSON.parse(datosDecodificados);
+                } catch (e) {
+                    console.error("Error al cargar datos desde la URL:", e);
+                }
+            }
+            return null;
+        }
+
+        // 2. Cargar desde LocalStorage
+        function loadFromLocalStorage() {
             const saved = localStorage.getItem('digimonCards');
             if (saved) {
-                cards = JSON.parse(saved);
-                updateTraitFilters();
-                renderCards();
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {
+                    console.error("Error al parsear datos de localStorage:", e);
+                }
+            }
+            return null;
+        }
+
+        // 3. Cargar JSON Inicial (Mínima Prioridad)
+        async function loadInitialJSON() {
+            try {
+                // Ruta relativa al JSON
+                const respuesta = await fetch('./digimon-collection-2025-10-29.json'); 
+                if (!respuesta.ok) {
+                    throw new Error(`HTTP error! status: ${respuesta.status}`);
+                }
+                return await respuesta.json();
+            } catch (error) {
+                console.warn("No se pudo cargar el archivo JSON inicial. Iniciando con colección vacía.", error);
+                return []; 
             }
         }
 
-        // Guardar cartas
-        function saveCards() {
-            localStorage.setItem('digimonCards', JSON.stringify(cards));
+        // Master Load Function (Prioridad: URL > LocalStorage > JSON Inicial)
+        async function loadCollection() {
+            const dataFromURL = loadFromURL();
+            const dataFromLocal = loadFromLocalStorage();
+            
+            if (dataFromURL) {
+                cards = dataFromURL;
+                console.log("Colección cargada desde URL compartida.");
+            } else if (dataFromLocal) {
+                cards = dataFromLocal;
+                console.log("Colección cargada desde LocalStorage.");
+            } else {
+                cards = await loadInitialJSON();
+                console.log("Colección cargada desde JSON inicial.");
+            }
+            
+            // Renderizar y actualizar filtros
+            updateTraitFilters();
+            renderCards();
         }
+
+        // Generar Enlace Compartible (NUEVO)
+        function generateShareLink() {
+            if (cards.length === 0) {
+                alert('No hay cartas en la colección para generar un enlace.');
+                return;
+            }
+            
+            const datosJSON = JSON.stringify(cards);
+            const datosCodificados = encodeURIComponent(datosJSON);
+            
+            // Crea el link con el hash (#)
+            const link = window.location.origin + window.location.pathname + '#' + datosCodificados;
+            
+            const linkInput = document.getElementById('shareLinkInput');
+            linkInput.value = link;
+            
+            // Opcional: Copiar al portapapeles y notificar
+            linkInput.select();
+            document.execCommand('copy');
+            alert('Enlace copiado al portapapeles. ¡Ya puedes compartir tu colección!');
+        }
+
+        // Generar código QR (MODIFICADO para usar el enlace dinámico)
+        let qrCodeInstance = null;
+        function generateQRFromShareLink() {
+            const linkInput = document.getElementById('shareLinkInput');
+            let url = linkInput.value;
+            
+            // Si el campo está vacío, genera el enlace primero
+            if (!url) {
+                generateShareLink();
+                url = linkInput.value;
+            }
+
+            if (!url) {
+                alert('No se pudo generar la URL. Asegúrate de tener cartas en tu colección y vuelve a intentarlo.');
+                return;
+            }
+
+            const qrContainer = document.getElementById('qrContainer');
+            const qrCanvas = document.getElementById('qrCanvas');
+            
+            // Limpiar QR anterior
+            qrCanvas.innerHTML = '';
+            if (qrCodeInstance) {
+                qrCodeInstance.clear();
+            }
+
+            // Generar nuevo QR
+            qrCodeInstance = new QRCode(qrCanvas, {
+                text: url,
+                width: 256,
+                height: 256,
+                colorDark: '#333333', // Negro para mejor escaneo
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            qrContainer.style.display = 'block';
+        }
+
+        // --- FUNCIONES EXISTENTES (MODIFICADAS PARA USAR saveCards) ---
 
         // Cambiar pestañas
         function switchTab(tab) {
@@ -730,12 +853,30 @@
 
             const traitFilters = document.getElementById('traitFilters');
             const allBtn = traitFilters.querySelector('[data-filter="all"]');
+            
+            // Si el botón 'Todos' existe, lo conservamos. Si no, lo creamos temporalmente para la limpieza.
+            const existingAllBtn = allBtn ? allBtn.cloneNode(true) : document.createElement('button');
+            if (!allBtn) {
+                existingAllBtn.className = 'filter-btn active';
+                existingAllBtn.setAttribute('data-filter', 'all');
+                existingAllBtn.setAttribute('data-type', 'trait');
+                existingAllBtn.textContent = 'Todos';
+                existingAllBtn.onclick = () => {
+                    document.querySelectorAll('[data-type="trait"]').forEach(b => b.classList.remove('active'));
+                    existingAllBtn.classList.add('active');
+                    currentTraitFilter = 'all';
+                    renderCards();
+                };
+            }
+
+
             traitFilters.innerHTML = '';
-            traitFilters.appendChild(allBtn);
+            traitFilters.appendChild(existingAllBtn);
 
             Array.from(traits).sort().forEach(trait => {
                 const btn = document.createElement('button');
                 btn.className = 'filter-btn';
+                if (trait === currentTraitFilter) btn.classList.add('active');
                 btn.setAttribute('data-filter', trait);
                 btn.setAttribute('data-type', 'trait');
                 btn.textContent = trait;
@@ -767,7 +908,7 @@
             };
 
             cards.push(card);
-            saveCards();
+            saveCards(); // Llamada a saveCards
             updateTraitFilters();
             renderCards();
             e.target.reset();
@@ -778,7 +919,7 @@
         function deleteCard(id) {
             if (confirm('¿Eliminar esta carta?')) {
                 cards = cards.filter(c => c.id !== id);
-                saveCards();
+                saveCards(); // Llamada a saveCards
                 updateTraitFilters();
                 renderCards();
             }
@@ -838,7 +979,7 @@
                     imageUrl: document.getElementById('editCardImage').value
                 };
 
-                saveCards();
+                saveCards(); // Llamada a saveCards
                 updateTraitFilters();
                 renderCards();
                 closeEditModal();
@@ -891,7 +1032,7 @@
 
                     if (confirm(`¿Importar ${importedCards.length} cartas? Esto reemplazará tu colección actual.`)) {
                         cards = importedCards;
-                        saveCards();
+                        saveCards(); // Llamada a saveCards
                         updateTraitFilters();
                         renderCards();
                         switchTab('collection');
@@ -904,40 +1045,9 @@
             reader.readAsText(file);
         }
 
-        // Generar código QR
-        let qrCodeInstance = null;
-        function generateQR() {
-            const url = document.getElementById('urlInput').value;
-            
-            if (!url) {
-                alert('Por favor ingresa la URL de tu colección');
-                return;
-            }
-
-            const qrContainer = document.getElementById('qrContainer');
-            const qrCanvas = document.getElementById('qrCanvas');
-            
-            // Limpiar QR anterior
-            qrCanvas.innerHTML = '';
-            if (qrCodeInstance) {
-                qrCodeInstance.clear();
-            }
-
-            // Generar nuevo QR
-            qrCodeInstance = new QRCode(qrCanvas, {
-                text: url,
-                width: 256,
-                height: 256,
-                colorDark: '#667eea',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.H
-            });
-
-            qrContainer.style.display = 'block';
-        }
-
         // Descargar QR
         function downloadQR() {
+            // Asegurarse de que se descargue la imagen en el canvas
             const canvas = document.querySelector('#qrCanvas canvas');
             if (!canvas) {
                 alert('Primero genera el código QR');
@@ -954,6 +1064,7 @@
             });
         }
 
+
         // Obtener color para etiqueta
         function getColorStyle(color) {
             const colors = {
@@ -965,7 +1076,7 @@
                 'Morado': 'background: #9C27B0; color: white;',
                 'Blanco': 'background: #f5f5f5; color: black; border: 2px solid #ddd;',
                 'Multicolor': 'background: linear-gradient(135deg, #f44336, #2196F3, #4CAF50); color: white;',
-                'Sincolor': 'background: linear-gradient(135deg, #f44336, #2196F3, #4CAF50); color: white;'
+                'SinColor': 'background: linear-gradient(135deg, #f44336, #2196F3, #4CAF50); color: white;'
             };
             return colors[color] || '';
         }
@@ -977,7 +1088,7 @@
             // Filtrar cartas
             let filtered = cards.filter(card => {
                 const matchesColor = currentColorFilter === 'all' || card.color === currentColorFilter;
-                const matchesTrait = currentTraitFilter === 'all' || (card.trait && card.trait.includes(currentTraitFilter));
+                const matchesTrait = currentTraitFilter === 'all' || (card.trait && card.trait.split(',').some(t => t.trim() === currentTraitFilter));
                 const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                      card.number.toLowerCase().includes(searchTerm.toLowerCase());
                 return matchesColor && matchesTrait && matchesSearch;
@@ -1063,16 +1174,6 @@
             });
         });
 
-        // Filtros de trait
-        document.querySelectorAll('[data-type="trait"]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('[data-type="trait"]').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentTraitFilter = btn.dataset.filter;
-                renderCards();
-            });
-        });
-
         // Búsqueda
         document.getElementById('searchBox').addEventListener('input', (e) => {
             searchTerm = e.target.value;
@@ -1080,7 +1181,7 @@
         });
 
         // Inicializar
-        loadCards();
+        loadCollection();
     </script>
 </body>
 </html>
